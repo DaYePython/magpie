@@ -87,6 +87,10 @@ type Provider struct {
 	KeyWeight int `json:"keyWeight,omitempty"`
 	// KeyPlan is the first key's plan (see KeyAccount.Plan).
 	KeyPlan string `json:"keyPlan,omitempty"`
+	// ImportKeys marks a versioned share payload that carries the complete
+	// key list. It is parsed and consumed by the import front ends, never
+	// stored as provider state.
+	ImportKeys bool `json:"importKeys,omitempty"`
 
 	// Base URLs, one per protocol the vendor serves natively. magpie appends
 	// the usual paths: chat/responses bases end in /v1 (OpenAI style),
@@ -1042,6 +1046,10 @@ func Slug(name string) string {
 
 // Save adds or replaces a provider.
 func Save(p Provider) error {
+	// A share carries its model selection as well as all keys; partial
+	// editor saves instead derive selection history from the old provider.
+	importKeys := p.ImportKeys
+	p.ImportKeys = false
 	// a key given a Vertex AI provider is refused here, before normalize
 	// drops it: it would never be sent
 	if p.IsVertex() && (strings.TrimSpace(p.Key) != "" || len(p.Keys) > 0) {
@@ -1071,6 +1079,32 @@ func Save(p Provider) error {
 	}
 	if p.ID == autoID && !stored(p.ID) { // one saved before keeps it (autoRefsOn)
 		return errAutoID
+	}
+	var f file
+	fileRead := false
+	if importKeys {
+		// Resolve the target before validating. Shared links omit local-only
+		// fields; applying them after validation could restore a local setting
+		// that is invalid with the shared preset (for example InsecureTLS).
+		var err error
+		f, err = read()
+		if err != nil {
+			return err
+		}
+		fileRead = true
+		if i := slices.IndexFunc(f.Providers, func(q Provider) bool { return q.ID == p.ID }); i >= 0 {
+			shared, local := p, f.Providers[i]
+			p = WithSharedSettings(local, shared)
+			// Certificate exceptions are tied to the recipient's old hosts.
+			if p.InsecureTLS && (p.Preset != "" || !sameEndpointHosts(local, shared)) {
+				p.InsecureTLS = false
+			}
+			// The GUI may already have fetched an icon from the public URL.
+			if shared.Icon != "" {
+				p.Icon, p.IconFrom = shared.Icon, shared.IconFrom
+			}
+			p.ImportKeys = false
+		}
 	}
 	if err := settings.CheckProxy(p.Proxy); err != nil {
 		return err
@@ -1118,18 +1152,23 @@ func Save(p Provider) error {
 			return fmt.Errorf("%s needs an API key", p.Name)
 		}
 	}
-	f, err := read()
-	if err != nil {
-		return err
+	if !fileRead {
+		var err error
+		f, err = read()
+		if err != nil {
+			return err
+		}
 	}
 	i := slices.IndexFunc(f.Providers, func(q Provider) bool { return q.ID == p.ID })
 	var was *Provider
 	if i >= 0 {
 		was = &f.Providers[i]
 	}
-	p.PickedFrom = listedWith(p, was)
-	p.Delisted = delistedWith(p, was)
-	p.DelistedAt = delistedAtWith(p, was)
+	if !importKeys {
+		p.PickedFrom = listedWith(p, was)
+		p.Delisted = delistedWith(p, was)
+		p.DelistedAt = delistedAtWith(p, was)
+	}
 	if was != nil {
 		if p.Was == nil {
 			p.Was = was.Was

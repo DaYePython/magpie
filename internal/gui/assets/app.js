@@ -6286,6 +6286,7 @@ function renderProviders(quiet) {
   dialog = renderAdd() || dialog;
   if (importing) dialog = renderImport(importing);
   if (importingApps) dialog = renderImportApps(importingApps);
+  if (confirmAsk?.classList.contains("provider-share")) dialog = confirmAsk;
   keptIcons = null;
   markUpstream();
   view.scrollTop = top; // first: a closing dialog folds into its row where it is
@@ -10074,6 +10075,16 @@ function drawEditor(p, presetID) {
     dup.onclick = () => duplicateProvider(p);
     bar.append(dup);
   }
+  if (p?.canShare) {
+    bar.classList.add("provider-share-bar");
+    const share = el("button", "text", t("Share"));
+    share.title = t("Share the saved configuration, including all API keys");
+    share.onclick = async () => {
+      try { await import("./providershare.js"); await shareProvider(p, share); }
+      catch (error) { if (share.isConnected) editorError(error.message); }
+    };
+    bar.append(share);
+  }
   bar.append(el("span", "grow"));
   const cancel = el("button", "text", t("Cancel"));
   cancel.onclick = cancelEdit;
@@ -10366,6 +10377,7 @@ function fetchImportIcon(p, head, ed) {
   ed.append(note);
   api("import/icon", { url: p.iconUrl }).then((r) => {
     p.icon = r.icon;
+    p.iconFrom = p.iconUrl;
     delete p.iconUrl;
     const old = head.firstChild;
     const now = icon(p.icon);
@@ -10685,7 +10697,7 @@ function renderImport(im) {
     return ed;
   }
 
-  const hosts = [...new Set([p.chat, p.responses, p.anthropic, p.gemini].filter(Boolean).map(hostOf))];
+  const hosts = [...new Set([p.chat, p.responses, p.anthropic, p.gemini, p.decide, p.modelsURL].filter(Boolean).map(hostOf))];
   ed.append(el("div", "warnbox", t("Added from a link. Your prompts and this key will go to {hosts}; add it only if you trust the site that sent you here.", { hosts: hosts.join(", ") })));
 
   const name = input(im.name ?? p.name, t("e.g. My Relay"));
@@ -10704,7 +10716,25 @@ function renderImport(im) {
   keyWrap.append(key, side);
   ed.append(...field(t("API key"), keyWrap, p.key ? t("From the link. Kept in ~/.config/magpie/providers.json, readable by you alone.") : ""));
 
-  ed.append(...field(t("Endpoints"), renderEndpoints(null, p), ""));
+  if (p.keys?.length) {
+    const keys = el("div", "import-keys");
+    for (const [index, account] of p.keys.entries()) {
+      const row = el("div", "ep");
+      row.append(el("b", "", account.name || t("API key {n}", { n: index + 2 })), el("code", "", "••••••••"));
+      if (account.protocol) row.append(el("span", "note", account.protocol));
+      if (account.off) row.append(el("span", "note", t("Paused")));
+      keys.append(row);
+    }
+    ed.append(...field(t("Additional API keys"), keys));
+  }
+
+  const endpoints = renderEndpoints(null, p);
+  if (p.modelsURL) {
+    const row = el("div", "ep");
+    row.append(el("span", "pl", t("Models URL")), el("code", "", p.modelsURL));
+    endpoints.append(row);
+  }
+  ed.append(...field(t("Endpoints"), endpoints, ""));
   if (p.models?.length) {
     const chips = el("div", "mchips");
     for (const m of p.models) {
@@ -10727,7 +10757,8 @@ function renderImport(im) {
     const n = (im.name ?? p.name).trim();
     if (!n) { name.focus(); return status(t("Give it a name"), "warn"); }
     saving(addBtn, t(im.replaces ? "Replacing…" : "Adding…"));
-    providerAction("save", { ...p, name: n, key: (im.key ?? p.key ?? "").trim() }, t("{name} added", { name: n }));
+    const shared = im.shared ? { importKeys: true, keys: p.keys || [] } : {};
+    providerAction("save", { ...p, ...shared, name: n, key: (im.key ?? p.key ?? "").trim() }, t("{name} added", { name: n }));
   };
   addBtn.onclick = add;
   bar.append(addBtn);

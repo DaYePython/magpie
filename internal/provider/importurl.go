@@ -40,6 +40,9 @@ const Scheme = "magpie"
 
 // ParseImport reads an import link into the provider it describes.
 func ParseImport(link string) (Provider, error) {
+	if len(link) > sharedLinkLimit {
+		return Provider{}, errors.New("the import link is too large")
+	}
 	u, err := url.Parse(strings.TrimSpace(link))
 	if err != nil || !strings.EqualFold(u.Scheme, Scheme) {
 		return Provider{}, errors.New("not a magpie:// link")
@@ -52,6 +55,9 @@ func ParseImport(link string) (Provider, error) {
 		return Provider{}, errorf("magpie://%s is not something magpie knows; links start magpie://import?", action)
 	}
 	q := u.Query()
+	if q.Has("format") || q.Has("data") {
+		return parseSharedImport(q)
+	}
 	get := func(k string) string { return strings.TrimSpace(q.Get(k)) }
 
 	var p Provider

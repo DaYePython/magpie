@@ -41,6 +41,34 @@ three.
 
 ## Constraints and failure behavior
 
+### Sharing a provider
+
+An API provider's details have Share beside Duplicate. It opens a sheet with
+the saved configuration's import link, a count of all included API keys and a
+notice that anyone holding the link can use its saved credentials, including
+secret request headers. Copy link uses the
+existing clipboard path and its fallback. The sheet states that edits should
+be saved first, keeps its link through background list refreshes, and Cancel,
+Escape or the backdrop returns to the editor. A failed share stays in the
+editor and says why; a reply arriving after it is closed opens nothing.
+Subscriptions and Google Vertex AI have no share action.
+`providerJSON.canShare` decides that availability, so a plugin or signed-in
+account whose local row resembles an API provider never offers a link.
+
+The sheet's implementation is [`providershare.js`](../../internal/gui/assets/providershare.js),
+loaded when Share is pressed. The server and link format are described in
+[Providers and accounts](providers-accounts.md#provider-share-links). The
+existing import confirmation shows additional keys masked with their names,
+protocols and paused state, and saves all of them only after Add or Replace.
+[`provider-share.test.cjs`](../../internal/gui/tests/provider-share.test.cjs)
+exercises the editor, copy and import in every language and both engines.
+
+A request in flight belongs to the current provider and draft, so a background
+redraw keeps its Share button busy and still opens the resulting sheet. An
+error is shown in that draft's current editor. Closing the editor, switching
+providers, or opening another confirmation cancels the pending request and
+releases its observer; a late reply cannot reopen or replace a dialog.
+
 ### Allowance card refreshes
 
 A card refresh applies only the requested account from the API's full

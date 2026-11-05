@@ -980,6 +980,54 @@ func showProvider(p provider.Provider) error {
 	return nil
 }
 
+// showImportPreview adds what an import saves but the ordinary provider view
+// leaves out: every key with the settings that decide where it may be used,
+// the decision endpoint, and any separate model-list endpoint.
+func showImportPreview(p provider.Provider) error {
+	if err := showProvider(p); err != nil {
+		return err
+	}
+	kv := func(k, v string) {
+		if v != "" && !strings.HasPrefix(v, "plugin://") {
+			fmt.Printf("  %s %s\n", muted.Render(pad(k, 10)), v)
+		}
+	}
+	kv("decide", p.Decide)
+	kv("models.url", p.ModelsURL)
+	keys := p.KeyList()
+	if len(keys) == 0 {
+		return nil
+	}
+	fmt.Printf("  %s\n", muted.Render("keys"))
+	for i, key := range keys {
+		name := key.Name
+		if name == "" {
+			name = "(unnamed)"
+		}
+		name = strings.Map(func(r rune) rune {
+			if r < 32 || r == 127 {
+				return ' '
+			}
+			return r
+		}, name)
+		state := "on"
+		switch {
+		case key.Active:
+			state = "active"
+		case !key.On:
+			state = "paused"
+		}
+		protocol := string(key.Protocol)
+		if protocol == "" {
+			protocol = "any"
+		}
+		fmt.Printf("  %s %s  %s  %s  %s\n",
+			muted.Render(pad(fmt.Sprintf("key %d", i+1), 10)),
+			name, muted.Render(key.Masked), state, protocol)
+	}
+	return nil
+}
+
 // atAddress moves p's URLs to addr (provider.AtAddress). A provider
 // saved with none, the gateway taking its preset's, is moved from the
 // preset's; an empty addr puts a local server's back at its preset's.
@@ -1500,7 +1548,7 @@ func importCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := showProvider(p); err != nil {
+	if err := showImportPreview(p); err != nil {
 		return err
 	}
 	if old, err := provider.Find(p.ID); err == nil {

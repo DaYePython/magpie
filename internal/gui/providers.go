@@ -322,8 +322,9 @@ type providerJSON struct {
 	ListError string             `json:"listError,omitempty"`
 	Agents    []providerAgent    `json:"agents"` // detected agents, current ones flagged
 	Sponsored bool               `json:"sponsored"`
-	KeyList   []provider.KeyInfo `json:"keyList"`           // its keys, in the order requests try them
-	Account   *accountJSON       `json:"account,omitempty"` // a signed-in agent, see provider.Account
+	KeyList   []provider.KeyInfo `json:"keyList"`            // its keys, in the order requests try them
+	CanShare  bool               `json:"canShare,omitempty"` // an API key provider, not a sign-in or Vertex
+	Account   *accountJSON       `json:"account,omitempty"`  // a signed-in agent, see provider.Account
 	// Move is where a built-in subscription stands with the community
 	// plugin that can run it (provider.Move): set for those that have one
 	Move *moveJSON `json:"move,omitempty"`
@@ -767,6 +768,7 @@ func providerInfoWith(p provider.Provider, ls provider.Listing, agents []agentUs
 	}
 	out.Key.Set = p.Key != ""
 	out.Key.Masked = provider.Mask(p.Key)
+	out.CanShare = p.Account == nil && !p.IsVertex()
 	if provider.BuiltinRetired(p.ID) {
 		// only its plugin's row is listed now: built-in accounts not moved
 		// yet are providersJSON.Unmoved's
@@ -1568,6 +1570,8 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			return
 		}
 		in := req.Provider
+		importKeys := in.ImportKeys
+		in.ImportKeys = false
 		if req.NoModels != nil {
 			in.NoModels = *req.NoModels
 		}
@@ -1591,6 +1595,34 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 		}
 		var moved []agent.Move
 		switch r.PathValue("action") {
+		case "share":
+			// Read stored providers only: a share never asks a vendor or
+			// exposes the credentials of a subscription sign-in.
+			ps, err := provider.Stored()
+			if err != nil {
+				fail(rw, err)
+				return
+			}
+			for _, p := range ps {
+				if p.ID != in.ID {
+					continue
+				}
+				link, err := provider.ShareLink(p)
+				if err != nil {
+					fail(rw, err)
+					return
+				}
+				n := len(p.Keys)
+				if p.Key != "" {
+					n++
+				}
+				rw.Header().Set("Cache-Control", "no-store")
+				credentials := n > 0 || len(p.Headers) > 0 || len(p.ExtraBody) > 0
+				writeJSON(rw, map[string]any{"link": link, "keys": n, "credentials": credentials})
+				return
+			}
+			http.NotFound(rw, r)
+			return
 		case "show":
 			// a signed-in account the user removed, back with its picks
 			if err := provider.ShowAccount(in.ID); err != nil {
@@ -1661,7 +1693,7 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 		case "save":
 			// a preset needs nothing but the key; a saved provider keeps
 			// its key when the form left it blank
-			if pr, err := provider.FromPreset(in.Preset); err == nil && in.Chat == "" && in.Responses == "" && in.Anthropic == "" && in.Gemini == "" {
+			if pr, err := provider.FromPreset(in.Preset); !importKeys && err == nil && in.Chat == "" && in.Responses == "" && in.Anthropic == "" && in.Gemini == "" {
 				pr.Key, pr.Models, pr.Fallback, pr.Headers, pr.BalanceToken, pr.Contexts = in.Key, in.Models, in.Fallback, in.Headers, in.BalanceToken, in.Contexts
 				pr.ZhipuTeam = in.ZhipuTeam
 				pr.NoModels = in.NoModels
@@ -1769,6 +1801,13 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 			}
 			if !keepWins {
 				in.RateWindows = wins
+			}
+			// A shared configuration is complete, while an editor sends
+			// partial changes. Keep its portable defaults before the
+			// ordinary save below inherits fields the editor left out.
+			shared := in
+			if req.LimitRestOff != nil {
+				shared.LimitRestOff = *req.LimitRestOff
 			}
 			// many keys pasted into the key field (361 on Discord: a provider
 			// added with hundreds): the first is the key, the others its
@@ -1970,7 +2009,7 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				if in.Vertex == nil && old != nil {
 					in.Vertex = old.Vertex
 				}
-				if in.Key == "" && old != nil {
+				if in.Key == "" && !importKeys && old != nil {
 					in.Key = old.Key
 				}
 				if in.BalanceToken == "" && old != nil && !req.ClearBalanceToken {
@@ -1978,7 +2017,9 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				}
 				if old != nil {
 					// the other keys are kept apart, in the Accounts list
-					in.Keys = old.Keys
+					if !importKeys {
+						in.Keys = old.Keys
+					}
 					// the editor's picks, or as they were
 					if req.Routing == nil {
 						in.Routing = old.Routing
@@ -2006,7 +2047,7 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 					if in.Contexts == nil {
 						in.Contexts = old.Contexts // a save that doesn't say
 					}
-					if in.Key == old.Key {
+					if !importKeys && in.Key == old.Key {
 						in.KeyName, in.KeyProtocol, in.KeyWeight, in.KeyPlan = old.KeyName, old.KeyProtocol, old.KeyWeight, old.KeyPlan
 					}
 					// what the editor doesn't show, set from the CLI or the
@@ -2031,6 +2072,11 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 				// a save that doesn't say keeps the icon, and where it came from
 				if in.Icon == "" && old != nil && in.Preset == "" {
 					in.Icon, in.IconFrom = old.Icon, old.IconFrom
+				}
+				if importKeys {
+					shared.ID = in.ID // a rename still saves under the old id first
+					in = provider.WithSharedSettings(in, shared)
+					in.ImportKeys = true
 				}
 				// native compaction only where the wire carries it: a
 				// signed-in account is told by the one saved

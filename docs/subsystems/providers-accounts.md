@@ -161,6 +161,54 @@ A signed-in account's model list exists only at its vendor (the ChatGPT backend'
 
 ## Runtime path
 
+### Provider share links
+
+`ShareLink` in [`shareurl.go`](../../internal/provider/shareurl.go) exports a
+saved API provider as `magpie://import?format=1&data=…`. The data is base64url
+JSON, not encrypted, and always carries `importKeys: true` beside an explicit
+`keys` array, empty included. Every API key is included, with its name,
+protocol, plan, weight and paused state. The portable configuration includes all API bases
+(including a preset's overrides), a separate `ModelsURL` (its query and trailing
+slash kept), model picks, headers, extra body, key header
+choice, routing, affinity, concurrency, request shape and price settings. OAuth sign-ins,
+Vertex credentials, proxies, balance credentials, local icon files, history and
+references to other providers are excluded. A custom icon's public source URL
+can be carried; sharing fetches nothing and writes nothing.
+
+`ParseImport` in [`importurl.go`](../../internal/provider/importurl.go) still
+accepts existing single-key query links. Versioned links are checked before
+previewing: malformed payloads, unsupported formats, invalid keys, headers and
+endpoint URLs are refused. A catalog containing only separators or whitespace
+is refused without panicking. Model-list URLs follow the endpoint's HTTPS or
+local-HTTP rule, with query parameters allowed. An older magpie refuses a versioned link rather than
+importing only a subset of its keys. Limits apply to the whole link as well as
+each key. A link changes nothing until Add or Replace is confirmed in the app,
+or `magpie import` is confirmed in the terminal.
+
+The app's Share action reads `Stored` and returns the link with `no-store`.
+The import preview marks a versioned link with `importKeys` as `shared`.
+Confirming Replace supplies its whole additional-key array, an empty array
+included, and replaces all portable settings, including omitted false, empty
+and default values. `WithSharedSettings` owns the field list used by export,
+parsing and replacement. The ordinary editor's partial-save inheritance runs
+for local settings only during such an import: the recipient's proxy, local
+credentials and enabled state remain local. An insecure-TLS exception belongs
+to the original endpoint hosts; it is cleared when the shared endpoints or a
+preset differ. A fetched custom icon and its public source URL replace the old
+icon. `Save` keeps the imported model selection history rather than deriving it
+from the replaced provider; the transient flag is never stored. An ordinary
+editor save and a legacy import still use their existing partial-save behavior.
+
+The terminal's `showImportPreview` in
+[`providers_cli.go`](../../internal/cli/providers_cli.go) shows every key
+masked, with its name, protocol and active/on/paused state, and shows the
+separate model-list and decision endpoints before confirmation. The app names
+the model-list host in its trust warning and shows that URL among its endpoints.
+See [`provider_share_test.go`](../../internal/cli/provider_share_test.go),
+[`provider_share_replace_test.go`](../../internal/gui/provider_share_replace_test.go),
+[`provider_share_test.go`](../../internal/gui/provider_share_test.go) and
+[`shareurl_test.go`](../../internal/provider/shareurl_test.go).
+
 1. **Add.** The Providers page adds a key provider through `Add` or `Save`, or an account through `StartSignIn`. An agent signed in on its own is found by `Accounts` with no step from the user.
 2. **Resolve.** The gateway calls `provider.Resolve` or `GroupFor` with the model name, then plans candidates over the provider's keys or accounts.
 3. **Sign.** For each try, `Sign` gives the request its auth. A token about to expire is refreshed first, and the rotated tokens go back to their one holder: the agent's store, or `logins.json` for an account standing behind it.

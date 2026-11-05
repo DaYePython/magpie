@@ -3426,6 +3426,11 @@ body.window .ag-sk-icon { width: 22px; height: 22px; border-radius: 6px; }
 .editor.import .mchips .mchip { cursor: default; }
 .editor .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 4px; padding-top: 10px; border-top: 1px solid var(--line-2); margin-top: 2px; }
 .editor .bar .danger { margin-left: -7px; }
+.editor .provider-share-bar { flex-wrap: wrap; }
+.provider-share-link { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); color: var(--fg); font: 12px/1.5 var(--code-font, var(--code, monospace)); overflow-wrap: anywhere; resize: vertical; }
+.provider-share-link:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.import-keys { min-width: 0; }
+.import-keys .ep { flex-wrap: wrap; }
 .editor .editor-error { grid-column: 1 / -1; font-size: 12px; line-height: 1.45; color: var(--red); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
 .editor .editor-error.warn { color: var(--amber); }
 .editor .hint.unmasked-away { color: var(--amber); }

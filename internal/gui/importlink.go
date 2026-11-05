@@ -20,6 +20,7 @@ type importJSON struct {
 	Provider provider.Provider `json:"provider"`
 	Error    string            `json:"error,omitempty"`
 	Replaces string            `json:"replaces,omitempty"` // the name of the provider it would replace
+	Shared   bool              `json:"shared,omitempty"`
 }
 
 var imports = struct {
@@ -34,6 +35,7 @@ func stashImport(link string) string {
 		in.Error = err.Error()
 	} else {
 		in.Provider = p
+		in.Shared = p.ImportKeys
 	}
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
